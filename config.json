@@ -1,0 +1,16 @@
+{
+  "API_URL_GPT": "https://api.openai.com/v1/chat/completions",
+  "BASE_URL": "https://www.amazon.com/",
+  "GPT_API_KEY": "sk-proj-gK1K4v4WAd9Dr1YbtVSoT3BlbkFJEGtRQ1iNhjuYuS3gXZl2",
+  "CONCURRENT_REQUESTS": 5,
+  "RETRY_TIME": 5,
+  "PROXIES_FILE_PATH": "proxies.txt",
+  "INPUT_FILE_PATH": "terms.txt",
+  "PAUSE_TIME": 900,
+  "RULES": {
+    "RULE_5_6_9": "\nRULE 5,6,9:\n\nHere are list of rules that needs to be matched against a search term. If any of the rules fails, reply with 'Rule No:False'. For example '5:False' or '6.1.4:False'\nIf all rules are satisfied, reply only with 'True'. Only write what's being asked do not add further explanations.\n\n\nRULES:\n5.\tNo products that are meant to be consumed by humans or animals (medicine, food, drinks) or skin care medicine.\n\n6.\tNo hazardous products: \n6.1. Pesticides/Pesticide devices, this includes some common examples \n6.1.1. Insecticides \n6.1.2. Rodenticides \n6.1.3. Herbicides \n6.1.4. Fungicides \n6.1.5. Repellants\n6.1.6. Antimicrobial pesticides\n6.1.7. Ultraviolet light units meant to kill pests \n6.1.8. Sound generators meant to deter pests \n6.1.9. Insect traps \n6.1.10. Ground vibrators meant to deter pests \n6.1.11. Water-treatment units, including water-treatment filters \n6.1.12. Air-treatment units, including air-treatment filters\n\n6.2. Flammable liquids \n6.3. Lithium Ion batteries\n6.4. Corrosive chemicals \n6.5. Aerosol cans \n6.6. Cleaning chemicals \n6.7. Car batteries \n6.8. Products that contain Lithium Ion batteries. If the product requires a lithium ion battery, but does not contain it when we buy it from the supplier, that's fine. \n6.9. Pressurised air/liquid canisters that are filled. Empty canisters are fine.\n\n9.    The search term can only contain english words. No Spanish, French or other languages. However model names/numbers are fine.\n\nSearch Term: {}\"\n",
+    "RULE_3": "\n    A Search Group can be defined as listing that someone would buy if they searched that term.\n I’m providing you a search term and a group of suggested terms for the given search term. You’re required to identify what could be the search group for the search term from the given information. Just return the search group name string. Do not write anything else.\n\n    Search Term: {}\n    Suggested terms:\n    {}\n\n    ",
+    "RULE_3_2": "\nA Search Group can be defined as listing that someone would buy if they searched that term.\nYour task is to identify if a product title provided to you belongs to a specific search group. Answer only in true/false. Do not write anything extra in any case.\n\nSearch Group: {}\nProduct Title: {}\n",
+    "RULE_4": "\nIdentify for a given search term if it contains brand/model names. For a search term, containing brand/model name is only allowed when the search term is using the brand/model name to describe product compatibility.\nFor example, the following search terms are fine even though they\ncontain brand/model names: ‘charging cable for kindle 2.0’, ‘headlight for 04 honda’ as they are describing product compatibility.\nReturn True if the above mentioned condition is satisfied\nReturn False in any other case\nDo not write anything other than True/False. Don’t add further explanations\n\nSearch term: {}\n\n"
+  }
+}
