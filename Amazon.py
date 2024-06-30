@@ -4,6 +4,7 @@ import json
 import scrapy
 import random
 import logging
+import requests
 from helper import *
 from scrapy import signals
 from urllib.parse import urljoin
@@ -174,6 +175,7 @@ class AmazonSpider(scrapy.Spider):
             self.save_logs()
 
     def parse_rule_2(self, response, **kwargs):
+        print('RULE 2 ==============')
         term = response.meta.get('term')
 
         if response.status != 200:
@@ -265,21 +267,58 @@ class AmazonSpider(scrapy.Spider):
             return
 
     def parse_rule_3(self, response, **kwargs):
+        print('RULE 3 1 ==============')
         try:
             gpt_data = response.json()
             group_term = gpt_data.get('choices', [{}])[0].get('message', {}).get('content', '')
-        except:
+        except Exception as e:
+            print(f"Error parsing GPT response: {e}")
             return
 
         meta = response.meta.copy()
         data = response.meta.get('data')
         product_listing = data['data']
+        
+        try:
+            product_names = [product['name'] for product in product_listing]
+            
+            # Joining all names into a single string
+            all_product_names = ", ".join(product_names)
+            
+            # Formatting the RULE_3_1 with the joined string
+            prompt = RULES.get('RULE_3_1').format(group_term, all_product_names).strip()
+            data = get_gpt_payload(prompt)
+            response = requests.post(API_URL_GPT, headers=GPT_HEADERS, data=json.dumps(data))
+            status = response.raise_for_status()
+            gpt_response = response.json()
+            gpt_response = gpt_response.get('choices', [{}])[0].get('message', {}).get('content', '')
+            
+            print(gpt_response)
+            
+            if gpt_response == 'True':
+                logging.info(
+                        f"Rule 3 1 success for term {group_term}..")
+            else:
+                logging.info(
+                        f"Rule 3 1 failed for term {group_term}. Total Items Results are more than 400.")
+                self.logs[group_term]['Rule 2'] = f'Failed: {group_term} has more than 400 items'
+                self.skipped_list.remove(group_term)
+                yield {group_term: f'Rule 2 Failed: {group_term} has more than 400 items'}
+                self.save_logs()
+                return
+        
+        except requests.RequestException as e:
+            print(f"Request failed: {e}")
+        
+        
         index = 0
         meta['name_index'] = index
         meta['group_term'] = group_term
         meta['proxy'] = random.choice(PROXIES)
+        
         prompt = RULES.get('RULE_3_2').format(group_term, product_listing[index]['name']).strip()
         data = get_gpt_payload(prompt)
+        
         yield scrapy.Request(
             url=API_URL_GPT,
             method='POST',
