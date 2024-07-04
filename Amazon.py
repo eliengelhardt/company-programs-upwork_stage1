@@ -4,7 +4,6 @@ import json
 import scrapy
 import random
 import logging
-import requests
 from helper import *
 from scrapy import signals
 from urllib.parse import urljoin
@@ -100,7 +99,6 @@ class AmazonSpider(scrapy.Spider):
             self.skipped_list.add(term)
             prompt = RULES.get('RULE_5_6_9').format(term).strip()
             data = get_gpt_payload(prompt)
-
             yield scrapy.Request(
                 url=API_URL_GPT,
                 method='POST',
@@ -117,7 +115,6 @@ class AmazonSpider(scrapy.Spider):
             :return:
         """
         term = response.meta.get('search_term')
-        print('analyzing : ' + term + ' ===============')
 
         self.logs[term] = {}
 
@@ -159,9 +156,6 @@ class AmazonSpider(scrapy.Spider):
                 self.logs[term]['Rule 1'] = 'Passed'
                 url = f"https://www.amazon.com/s?k={term}"
                 meta = {'term': term, 'suggestions': suggestions, 'proxy': random.choice(PROXIES)}
-                
-                logging.info(f"Scrapping about {term}...")
-
                 yield scrapy.Request(url, meta=meta, callback=self.parse_rule_2, headers=HEADERS)
 
             else:
@@ -180,7 +174,6 @@ class AmazonSpider(scrapy.Spider):
             self.save_logs()
 
     def parse_rule_2(self, response, **kwargs):
-        print('RULE 2 ==============')
         term = response.meta.get('term')
 
         if response.status != 200:
@@ -192,7 +185,6 @@ class AmazonSpider(scrapy.Spider):
             return
         suggestions = response.meta.get('suggestions')
         total_results = response.css('div[class="a-section a-spacing-small a-spacing-top-small"] > span::text').get('')
-        
         total_results = total_results.replace(',', '')
         total_results = re.findall(r'\d+', total_results)
         if total_results:
@@ -273,56 +265,21 @@ class AmazonSpider(scrapy.Spider):
             return
 
     def parse_rule_3(self, response, **kwargs):
-        print('RULE 3 1 ==============')
         try:
             gpt_data = response.json()
             group_term = gpt_data.get('choices', [{}])[0].get('message', {}).get('content', '')
-        except Exception as e:
-            print(f"Error parsing GPT response: {e}")
+        except:
             return
 
         meta = response.meta.copy()
         data = response.meta.get('data')
         product_listing = data['data']
-
-        try:
-            parse_result = False
-            for product in product_listing[:15]:
-                # Formatting the RULE_3_1 with the joined string
-                prompt = RULES.get('RULE_3_1').format(product['name'], group_term).strip()
-                data = get_gpt_payload(prompt)
-                response = requests.post(API_URL_GPT, headers=GPT_HEADERS, data=json.dumps(data))
-                gpt_response = response.json().get('choices', [{}])[0].get('message', {}).get('content', '')
-                if gpt_response == 'False':
-                    logging.info(
-                        f"Rule 3 1 success for term {group_term}.")
-                    self.logs[group_term]['Rule 3 1'] = f'Success: {group_term}.'
-                    self.save_logs()
-                    parse_result = True
-                    break
-
-            if parse_result == False:
-                logging.info(
-                        f"Rule 3 1 failed for term {group_term}. There are product lists more than 15 with the same topic.")
-                logging.info(f"Prompt: {prompt}")
-                self.logs[group_term]['Rule 3'] = f'Failed: {group_term}. There are product lists more than 15 with the same topic.'
-                self.skipped_list.remove(group_term)
-                yield {group_term: f'Rule 3 Failed: {group_term}. There are product lists more than 15 with the same topic.'}
-                self.save_logs()
-                return
-        
-        except requests.RequestException as e:
-            print(f"Request failed: {e}")
-            return
-        
         index = 0
         meta['name_index'] = index
         meta['group_term'] = group_term
         meta['proxy'] = random.choice(PROXIES)
-        
         prompt = RULES.get('RULE_3_2').format(group_term, product_listing[index]['name']).strip()
         data = get_gpt_payload(prompt)
-        
         yield scrapy.Request(
             url=API_URL_GPT,
             method='POST',

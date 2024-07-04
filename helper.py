@@ -17,7 +17,7 @@ def get_gpt_payload(prompt):
     ]
 
     data = {
-        'model': 'gpt-4o',  # Change this line to specify the GPT-4o model
+        'model': 'gpt-3.5-turbo',
         'messages': messages,
         'max_tokens': 250
     }
