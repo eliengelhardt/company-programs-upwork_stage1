@@ -1,59 +1,17 @@
-import re
-import time
 import json
-import scrapy
-import random
 import logging
-import requests
-from helper import *
-from scrapy import signals
+import random
+import re
 from urllib.parse import urljoin
+
+import requests
+import scrapy
 from scrapy.crawler import CrawlerProcess
-from sales_rank_to_sales import run_class
-from scrapy.exceptions import IgnoreRequest
 from scrapy.utils.project import get_project_settings
-from scrapy.utils.response import response_status_message
-from scrapy.downloadermiddlewares.retry import RetryMiddleware
+
+from helper import *
 from minimum_sales_required import minimum_total_sales_of_search_group_for_results
-
-class_for_sales_rank = run_class()
-
-with open('config.json', 'r') as json_file:
-    config_data = json.load(json_file)
-
-HEADERS = {
-    "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-    "accept-language": "en-US,en;q=0.9",
-    "cache-control": "max-age=0",
-    "device-memory": "8",
-    "downlink": "6.85",
-    "dpr": "1.5",
-    "ect": "4g",
-    # "referer": "https://www.amazon.com/s?k=stanley&crid=PVDMUJUCJK7N&sprefix=stanley%2Caps%2C334&ref=nb_sb_noss_1",
-    "rtt": "200",
-    "sec-ch-device-memory": "8",
-    "sec-ch-dpr": "1.5",
-    "sec-ch-ua": "\"Google Chrome\";v=\"123\", \"Not:A-Brand\";v=\"8\", \"Chromium\";v=\"123\"",
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": "\"Windows\"",
-    "sec-ch-ua-platform-version": "\"10.0.0\"",
-    "sec-ch-viewport-width": "1442",
-    "sec-fetch-dest": "document",
-    "sec-fetch-mode": "navigate",
-    "sec-fetch-site": "same-origin",
-    "sec-fetch-user": "?1",
-    "upgrade-insecure-requests": "1",
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "viewport-width": "1442"
-}
-
-GPT_HEADERS = {
-    'Content-Type': 'application/json',
-    'Authorization': f'Bearer {config_data.get("GPT_API_KEY")}'
-}
-RULES = config_data.get('RULES')
-API_URL_GPT = config_data.get('API_URL_GPT')
-BASE_URL = config_data.get('BASE_URL')
+from sales_rank_to_sales import run_class
 
 
 def get_proxies():
@@ -79,9 +37,6 @@ def get_proxies():
     return proxies
 
 
-PROXIES = get_proxies()
-
-
 class AmazonSpider(scrapy.Spider):
     name = "amazon_Scope"
 
@@ -95,19 +50,20 @@ class AmazonSpider(scrapy.Spider):
         self.logs = {}
 
     def start_requests(self):
-        for term in terms_list:
-            term = term.lower().strip()
-            self.skipped_list.add(term)
-            prompt = RULES.get('RULE_5_6_9').format(term).strip()
-            data = get_gpt_payload(prompt)
+        with open(config_data.get('INPUT_FILE_PATH'), mode='r') as f:
+            for term in f.readlines():
+                term = term.lower().strip()
+                self.skipped_list.add(term)
+                prompt = RULES.get('RULE_5_6_9').format(term).strip()
+                data = get_gpt_payload(prompt)
 
-            yield scrapy.Request(
-                url=API_URL_GPT,
-                method='POST',
-                headers=GPT_HEADERS,
-                body=json.dumps(data),
-                meta={'search_term': term, 'proxy': random.choice(PROXIES)}
-            )
+                yield scrapy.Request(
+                    url=API_URL_GPT,
+                    method='POST',
+                    headers=GPT_HEADERS,
+                    body=json.dumps(data),
+                    meta={'search_term': term}
+                )
 
     def parse(self, response, **kwargs):
         """
@@ -159,7 +115,7 @@ class AmazonSpider(scrapy.Spider):
                 self.logs[term]['Rule 1'] = 'Passed'
                 url = f"https://www.amazon.com/s?k={term}"
                 meta = {'term': term, 'suggestions': suggestions, 'proxy': random.choice(PROXIES)}
-                
+
                 logging.info(f"Scrapping about {term}...")
 
                 yield scrapy.Request(url, meta=meta, callback=self.parse_rule_2, headers=HEADERS)
@@ -192,7 +148,7 @@ class AmazonSpider(scrapy.Spider):
             return
         suggestions = response.meta.get('suggestions')
         total_results = response.css('div[class="a-section a-spacing-small a-spacing-top-small"] > span::text').get('')
-        
+
         total_results = total_results.replace(',', '')
         total_results = re.findall(r'\d+', total_results)
         if total_results:
@@ -303,26 +259,28 @@ class AmazonSpider(scrapy.Spider):
 
             if parse_result == False:
                 logging.info(
-                        f"Rule 3 1 failed for term {group_term}. There are product lists more than 15 with the same topic.")
+                    f"Rule 3 1 failed for term {group_term}. There are product lists more than 15 with the same topic.")
                 logging.info(f"Prompt: {prompt}")
-                self.logs[group_term]['Rule 3'] = f'Failed: {group_term}. There are product lists more than 15 with the same topic.'
+                self.logs[group_term][
+                    'Rule 3'] = f'Failed: {group_term}. There are product lists more than 15 with the same topic.'
                 self.skipped_list.remove(group_term)
-                yield {group_term: f'Rule 3 Failed: {group_term}. There are product lists more than 15 with the same topic.'}
+                yield {
+                    group_term: f'Rule 3 Failed: {group_term}. There are product lists more than 15 with the same topic.'}
                 self.save_logs()
                 return
-        
+
         except requests.RequestException as e:
             print(f"Request failed: {e}")
             return
-        
+
         index = 0
         meta['name_index'] = index
         meta['group_term'] = group_term
         meta['proxy'] = random.choice(PROXIES)
-        
+
         prompt = RULES.get('RULE_3_2').format(group_term, product_listing[index]['name']).strip()
         data = get_gpt_payload(prompt)
-        
+
         yield scrapy.Request(
             url=API_URL_GPT,
             method='POST',
@@ -655,105 +613,56 @@ class AmazonSpider(scrapy.Spider):
             return
 
     def save_logs(self):
-        with open('rule_logs.json', 'w') as f:
+        with open('inputs/rule_logs.json', 'w') as f:
             json.dump(self.logs, f, indent=4)
 
-    def close(spider, reason):
-        with open('skipped.json', 'w') as f:
-            json.dump(list(spider.skipped_list), f, indent=4)
-
-
-class HandleMiddleware:
-    def __init__(self, crawler):
-        self.crawler = crawler
-        self.delay = config_data.get('PAUSE_TIME')
-        self.openai_api_url = 'https://api.openai.com/'
-
-    @classmethod
-    def from_crawler(cls, crawler):
-        middleware = cls(crawler)
-        crawler.signals.connect(middleware.spider_opened, signal=signals.spider_opened)
-        return middleware
-
-    def spider_opened(self, spider):
-        self.logger = spider.logger
-
-    def process_response(self, request, response, spider):
-        if response.status == 429 and self._is_openai_request(request):
-            self.logger.warning(
-                "Received 429 status code for OpenAI request. Pausing for {} minutes.".format(self.delay / 60))
-            time.sleep(self.delay)
-            self.logger.info("Resuming the request.")
-            return request.copy()  # Resend the original request after the delay
-        return response
-
-    def _is_openai_request(self, request):
-        return request.url.startswith(self.openai_api_url)
-
-    def process_exception(self, request, exception, spider):
-        if isinstance(exception, IgnoreRequest):
-            return None
-        return request
-
-
-class ProxyRetryMiddleware(RetryMiddleware):
-    def __init__(self, settings):
-        super().__init__(settings)
-        self.proxies = PROXIES
-        if not self.proxies:
-            raise ValueError("No proxies found in settings")
-
-    @classmethod
-    def from_crawler(cls, crawler):
-        return cls(crawler.settings)
-
-    def process_request(self, request, spider):
-        # Assign a random proxy to the request
-        request.meta['proxy'] = random.choice(self.proxies)
-        return None
-
-    def process_response(self, request, response, spider):
-        if request.meta.get('dont_retry', False):
-            return response
-
-        if response.status in self.retry_http_codes:
-            reason = response_status_message(response.status)
-            return self._retry(request, reason, spider) or response
-
-        # Continue processing in the same callback method
-        return response
-
-    def process_exception(self, request, exception, spider):
-        if isinstance(exception, self.EXCEPTIONS_TO_RETRY) and not request.meta.get('dont_retry', False):
-            return self._retry(request, exception, spider)
-        return None
-
-    def _retry(self, request, reason, spider):
-        retries = request.meta.get('retry_times', 0) + 1
-
-        if retries <= config_data.get('RETRY_TIME'):
-            logging.info(f"Retrying {request} (failed {retries} times): {reason}")
-            retryreq = request.copy()
-            retryreq.meta['retry_times'] = retries
-            retryreq.dont_filter = True
-            # Rotate the proxy
-            retryreq.meta['proxy'] = random.choice(self.proxies)
-            return retryreq
-        else:
-            status_code = int(reason.split(' ')[0])
-
-            logging.info(f"Processing response with status code {status_code} despite retry limit exceeded")
-
-            return None
+    def close(self, spider, reason):
+        with open('inputs/skipped.json', 'w') as f:
+            json.dump(list(self.skipped_list), f, indent=4)
 
 
 if __name__ == "__main__":
-    terms = open(config_data.get('INPUT_FILE_PATH'), mode='r')
-    terms_list = terms.readlines()
+    with open('inputs/config.json', 'r') as json_file:
+        config_data = json.load(json_file)
+
+    HEADERS = {
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "accept-language": "en-US,en;q=0.9",
+        "cache-control": "max-age=0",
+        "device-memory": "8",
+        "downlink": "6.85",
+        "dpr": "1.5",
+        "ect": "4g",
+        # "referer": "https://www.amazon.com/s?k=stanley&crid=PVDMUJUCJK7N&sprefix=stanley%2Caps%2C334&ref=nb_sb_noss_1",
+        "rtt": "200",
+        "sec-ch-device-memory": "8",
+        "sec-ch-dpr": "1.5",
+        "sec-ch-ua": "\"Google Chrome\";v=\"123\", \"Not:A-Brand\";v=\"8\", \"Chromium\";v=\"123\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\"",
+        "sec-ch-ua-platform-version": "\"10.0.0\"",
+        "sec-ch-viewport-width": "1442",
+        "sec-fetch-dest": "document",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "same-origin",
+        "sec-fetch-user": "?1",
+        "upgrade-insecure-requests": "1",
+        "viewport-width": "1442"
+    }
+    GPT_HEADERS = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {config_data.get("GPT_API_KEY")}'
+    }
+    RULES = config_data.get('RULES')
+    API_URL_GPT = config_data.get('API_URL_GPT')
+    BASE_URL = config_data.get('BASE_URL')
+
+    class_for_sales_rank = run_class()
+    PROXIES = get_proxies()
+
     local_setting = get_project_settings()
-    file_name = f"final_logs.json"
     local_setting['FEED_FORMAT'] = 'json'
-    local_setting['FEED_URI'] = file_name
+    local_setting['FEED_URI'] = f"outputs/final_logs.json"
     local_setting['ROBOTSTXT_OBEY'] = False
     # local_setting['RETRY_TIMES'] = config_data.get('RETRY_TIME')
     # local_setting['RETRY_HTTP_CODES'] = [500, 502, 503, 504, 400, 403, 404, 408]
@@ -761,15 +670,19 @@ if __name__ == "__main__":
     local_setting['DOWNLOADER_MIDDLEWARES'] = {
         #     'rotating_proxies.middlewares.RotatingProxyMiddleware': 610,
         #     'rotating_proxies.middlewares.BanDetectionMiddleware': 620,
-        'Amazon.HandleMiddleware': 543,
-        'Amazon.ProxyRetryMiddleware': 543
+        'middlewares.handle_middleware.HandleMiddleware': 543,
+        # 'middlewares.proxy_retry_middleware.ProxyRetryMiddleware': 543
     }
+
     local_setting['HTTPERROR_ALLOW_ALL'] = True
     local_setting['DOWNLOAD_TIMEOUT'] = 1800
     local_setting[
         'USER_AGENT'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.82 Safari/537.36'
     local_setting['LOG_LEVEL'] = 'DEBUG'
     local_setting['CONCURRENT_REQUESTS'] = config_data.get('CONCURRENT_REQUESTS')
+    local_setting['CUSTOM_CONFIG_DATA'] = config_data
+    local_setting['PROXIES'] = PROXIES
+
     process = CrawlerProcess(local_setting)
     crawler = process.create_crawler(AmazonSpider)
     process.crawl(crawler)
