@@ -11,7 +11,7 @@ class run_class:
     multipler_for_patio = 2 - (abs((float_month - 1) - 6) / 6)  # 1 is for winter, 2 is for summer
 
 
-    loc_of_data = "sales_rank_info"
+    loc_of_data = "inputs/sales_rank_info"
 
     catagory_to_raw_text = {}
     catagory_to_sales_info = {}
